@@ -1,59 +1,40 @@
 #!/bin/bash
 
-# Show usage hints
-function usage() {
-  echo "Usage: $0 <white list> [<exclude list>]"
-  echo "  <white list>   Comma-separated list of allowed container names"
-  echo "  <exclude list> Optional comma-separated list of excluded container names"
-}
-
-# Check if a white list is provided
-if [[ -z $1 ]]; then
-  echo "ERROR: Please provide a white list as the first argument"
-  usage
+# Check if white list is passed as parameter
+if [ -z "$1" ]; then
+  echo "Error: White list is mandatory"
+  echo "Usage: ./script.sh <white_list> [<exclude_list>]"
   exit 1
 fi
 
-# Set the white list as an array
-IFS=',' read -ra white_list <<< "$1"
+white_list=$1
+IFS=',' read -ra white_array <<< "$white_list"
 
-# Check if an exclude list is provided
-if [[ ! -z $2 ]]; then
-  IFS=',' read -ra exclude_list <<< "$2"
-else
-  exclude_list=()
+# Check if exclude list is passed as parameter
+if [ -n "$2" ]; then
+  exclude_list=$2
+  IFS=',' read -ra exclude_array <<< "$exclude_list"
 fi
 
-# Initialize an array to store the names not in the white list
-not_in_white_list=()
+# Extract the container names and remove the ones in the exclude list
+container_names=$(docker ps --format '{{.Names}}' | grep -v -E '('"$(IFS='|' ; echo "${exclude_array[*]}")"')')
 
-# Extract the container names
-docker ps --format "{{.Names}}" | while read name; do
+# Extract the unique environment ids from the container names
+env_ids=$(echo "$container_names" | sed 's/^\([^_]*\).*$/\1/' | sort -u)
 
-  # Extract the name before the first underscore
-  name=$(echo $name | cut -d'_' -f1)
-
-  # Check if the name is in the exclude list
-  if [[ " ${exclude_list[@]} " =~ " $name " ]]; then
-    continue
+# Check each env id against the white list
+for env_id in $env_ids; do
+  if [[ " ${white_array[*]} " != *" $env_id "* ]]; then
+    echo "Error: Environment $env_id is not in the white list"
+    errors+=("$env_id")
   fi
-
-  # Check if the name is in the white list
-  if [[ ! " ${white_list[@]} " =~ " $name " ]]; then
-    not_in_white_list+=("$name")
-    continue
-  fi
-
-  # Print the name
-  echo $name
-
 done
 
-# Check if there are any names not in the white list
-if [[ ${#not_in_white_list[@]} -gt 0 ]]; then
-  echo "ERROR: The following container names are not in the white list:"
-  for name in "${not_in_white_list[@]}"; do
-    echo "  - $name"
-  done
+# Print errors, if any
+if [ ${#errors[@]} -ne 0 ]; then
+  echo "Errors found: ${errors[*]}"
   exit 1
+else
+  echo "All environments are in the white list"
+  exit 0
 fi
