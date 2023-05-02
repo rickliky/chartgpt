@@ -1,0 +1,43 @@
+#!/bin/bash
+
+# Parse the command-line arguments as the whitelist and exclude list
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 <whitelist> [excludelist]"
+    exit 1
+fi
+
+whitelist=$(echo "$1" | tr ',' ' ')
+excludelist=()
+if [ $# -ge 2 ]; then
+    excludelist=$(echo "$2" | tr ',' ' ')
+fi
+
+# Get the container names before the first underscore
+containers=$(docker ps --format '{{.Names}}' | awk -F'_' '{print $1}' | sort -u)
+
+# Filter out containers not in the whitelist or in the exclude list
+filtered_containers=()
+for container in ${containers[@]}; do
+    if [[ " ${whitelist[@]} " =~ " ${container} " ]] && ! [[ " ${excludelist[@]} " =~ " ${container} " ]]; then
+        filtered_containers+=("$container")
+    fi
+done
+
+# Print the filtered list of containers
+printf '%s\n' "${filtered_containers[@]}"
+
+# Check if any containers are outside of the whitelist
+invalid_containers=()
+for container in ${filtered_containers[@]}; do
+    if ! [[ " ${whitelist[@]} " =~ " ${container} " ]]; then
+        invalid_containers+=("$container")
+    fi
+done
+
+# Print a statement about invalid containers
+if [ ${#invalid_containers[@]} -gt 0 ]; then
+    echo "The following containers are not in the whitelist: ${invalid_containers[@]}"
+    exit 1
+else
+    exit 0
+fi
